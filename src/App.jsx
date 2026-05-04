@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Leaderboard from './pages/Leaderboard'
 import PlayerProfile from './pages/PlayerProfile'
@@ -8,7 +8,9 @@ import Admin from './pages/Admin'
 
 export default function App() {
   return (
-    <BrowserRouter>
+    // HashRouter is required for GitHub Pages — it doesn't support SPA routing
+    // URLs will look like: username.github.io/tm-ratings/#/players/1
+    <HashRouter>
       <div className="min-h-screen bg-[#0a0e1a]">
         <Navbar />
         <main className="max-w-6xl mx-auto px-4 py-8">
@@ -21,6 +23,6 @@ export default function App() {
           </Routes>
         </main>
       </div>
-    </BrowserRouter>
+    </HashRouter>
   )
 }

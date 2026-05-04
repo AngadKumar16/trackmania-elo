@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
+import { getLeaderboard } from '../lib/api'
 import { TierBadge } from '../components/Badge'
 
 function RankDisplay({ rank }) {
@@ -14,20 +14,25 @@ function RankDisplay({ rank }) {
 export default function Leaderboard() {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    axios.get('/api/leaderboard')
-      .then(r => { setData(r.data); setLoading(false) })
-      .catch(() => setLoading(false))
+    getLeaderboard()
+      .then(setData)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="text-gray-400 text-center py-20">Loading...</div>
+  if (loading) return <div className="text-gray-400 text-center py-20">Loading…</div>
+  if (error)   return <div className="text-red-400 text-center py-20">Error: {error}</div>
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Global Rankings</h1>
-        <p className="text-gray-500 text-sm mt-1">Best 8 results · 12-month rolling window · Decay: −10% per 2 months</p>
+        <p className="text-gray-500 text-sm mt-1">
+          Best 8 results · 12-month rolling window · −10% decay per 2 months
+        </p>
       </div>
 
       <div className="rounded-xl border border-[#1f2937] overflow-hidden">
@@ -44,9 +49,7 @@ export default function Leaderboard() {
           <tbody className="divide-y divide-[#1f2937]">
             {data.map(entry => (
               <tr key={entry.player.id} className="bg-[#111827] hover:bg-[#1a2235] transition-colors group">
-                <td className="px-4 py-4">
-                  <RankDisplay rank={entry.rank} />
-                </td>
+                <td className="px-4 py-4"><RankDisplay rank={entry.rank} /></td>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-2">
                     <Link
@@ -76,9 +79,7 @@ export default function Leaderboard() {
                         {entry.bestResult.tournament_name}
                       </span>
                     </div>
-                  ) : (
-                    <span className="text-gray-700">—</span>
-                  )}
+                  ) : <span className="text-gray-700">—</span>}
                 </td>
               </tr>
             ))}

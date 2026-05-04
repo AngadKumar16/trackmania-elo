@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
+import {
+  getPlayers, addPlayer, deletePlayer,
+  getTournaments, addTournament, deleteTournament,
+  getAllResults, addResult, deleteResult,
+  takeMonthlySnapshot
+} from '../lib/api'
+import { computePoints } from '../utils/scoring'
 
-// ── tiny reusable components ──────────────────────────────────────────────────
+// ── Tiny shared components ────────────────────────────────────────────────────
 
 function Section({ title, subtitle, children }) {
   return (
@@ -14,28 +20,25 @@ function Section({ title, subtitle, children }) {
   )
 }
 
-function Field({ label, children }) {
-  return (
-    <div>
-      <label className="text-xs text-gray-500 mb-1 block">{label}</label>
-      {children}
-    </div>
-  )
-}
-
 const inputCls =
   'w-full bg-[#0a0e1a] border border-[#1f2937] rounded-lg px-3 py-2 text-white text-sm ' +
   'focus:outline-none focus:border-[#00aaff] placeholder-gray-700 transition-colors'
 
 function Input({ label, ...props }) {
-  return <Field label={label}><input className={inputCls} {...props} /></Field>
+  return (
+    <div>
+      <label className="text-xs text-gray-500 mb-1 block">{label}</label>
+      <input className={inputCls} {...props} />
+    </div>
+  )
 }
 
 function Select({ label, children, ...props }) {
   return (
-    <Field label={label}>
+    <div>
+      <label className="text-xs text-gray-500 mb-1 block">{label}</label>
       <select className={inputCls} {...props}>{children}</select>
-    </Field>
+    </div>
   )
 }
 
@@ -51,14 +54,19 @@ function Btn({ children, onClick, variant = 'primary', disabled }) {
 
 function Toast({ msg }) {
   if (!msg) return null
+  const isError = msg.startsWith('Error')
   return (
-    <div className="fixed bottom-6 right-6 bg-[#111827] border border-[#00aaff]/40 text-[#00aaff] text-sm px-4 py-2 rounded-lg shadow-xl z-50">
+    <div className={`fixed bottom-6 right-6 text-sm px-4 py-2 rounded-lg shadow-xl z-50 border ${
+      isError
+        ? 'bg-[#1a0a0a] border-red-500/40 text-red-400'
+        : 'bg-[#111827] border-[#00aaff]/40 text-[#00aaff]'
+    }`}>
       {msg}
     </div>
   )
 }
 
-// ── main component ────────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Admin() {
   const [players,     setPlayers]     = useState([])
@@ -71,70 +79,72 @@ export default function Admin() {
   const [newResult,     setNR] = useState({ player_id: '', tournament_id: '', placement: '', placement_range_end: '' })
   const [snapMonth,     setSM] = useState('')
 
-  const notify = msg => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+  const notify = msg => { setToast(msg); setTimeout(() => setToast(''), 3500) }
 
-  const refresh = () => {
-    axios.get('/api/players').then(r => setPlayers(r.data))
-    axios.get('/api/tournaments').then(r => setTournaments(r.data))
-    axios.get('/api/results').then(r => setResults(r.data))
+  const refresh = async () => {
+    const [p, t, r] = await Promise.all([getPlayers(), getTournaments(), getAllResults()])
+    setPlayers(p)
+    setTournaments(t)
+    setResults(r)
   }
 
   useEffect(() => { refresh() }, [])
 
-  // Add player
-  const addPlayer = async () => {
+  const handleAddPlayer = async () => {
     if (!newPlayer.name.trim()) return
-    await axios.post('/api/players', newPlayer)
-    setNP({ name: '', country: '' })
-    notify('Player added ✓')
-    refresh()
+    try {
+      await addPlayer(newPlayer)
+      setNP({ name: '', country: '' })
+      notify('Player added ✓')
+      refresh()
+    } catch (e) { notify(`Error: ${e.message}`) }
   }
 
-  // Add tournament
-  const addTournament = async () => {
+  const handleAddTournament = async () => {
     if (!newTournament.name.trim() || !newTournament.date) return
-    await axios.post('/api/tournaments', newTournament)
-    setNT({ name: '', tier: 'A', impact: 'standard', date: '', prize_pool: '' })
-    notify('Tournament added ✓')
-    refresh()
+    try {
+      await addTournament(newTournament)
+      setNT({ name: '', tier: 'A', impact: 'standard', date: '', prize_pool: '' })
+      notify('Tournament added ✓')
+      refresh()
+    } catch (e) { notify(`Error: ${e.message}`) }
   }
 
-  // Add result
-  const addResult = async () => {
+  const handleAddResult = async () => {
     if (!newResult.player_id || !newResult.tournament_id || !newResult.placement) return
     try {
-      const r = await axios.post('/api/results', {
+      await addResult({
         player_id:          parseInt(newResult.player_id),
         tournament_id:      parseInt(newResult.tournament_id),
         placement:          parseInt(newResult.placement),
-        placement_range_end: newResult.placement_range_end
-          ? parseInt(newResult.placement_range_end)
-          : null
+        placement_range_end: newResult.placement_range_end ? parseInt(newResult.placement_range_end) : null
       })
-      notify(`Result added — ${r.data.points_earned} pts ✓`)
+      // Preview the points for the toast
+      const t = tournaments.find(t => t.id === parseInt(newResult.tournament_id))
+      const ep = newResult.placement_range_end
+        ? Math.max(parseInt(newResult.placement), parseInt(newResult.placement_range_end))
+        : parseInt(newResult.placement)
+      const pts = t ? computePoints(t.tier, ep, t.impact, t.date) : '?'
+      notify(`Result added — ${pts} pts ✓`)
       setNR({ player_id: '', tournament_id: '', placement: '', placement_range_end: '' })
       refresh()
-    } catch (e) {
-      notify(`Error: ${e.response?.data?.error || e.message}`)
-    }
+    } catch (e) { notify(`Error: ${e.message}`) }
   }
 
-  // Delete result
-  const deleteResult = async id => {
-    await axios.delete(`/api/results/${id}`)
-    notify('Result deleted')
-    refresh()
+  const handleDeleteResult = async id => {
+    try {
+      await deleteResult(id)
+      notify('Result deleted')
+      refresh()
+    } catch (e) { notify(`Error: ${e.message}`) }
   }
 
-  // Monthly snapshot
-  const triggerSnapshot = async () => {
+  const handleSnapshot = async () => {
     if (!snapMonth) return
     try {
-      const r = await axios.post('/api/monthly/snapshot', { month: snapMonth })
-      notify(`Snapshot saved for ${r.data.month} ✓`)
-    } catch (e) {
-      notify(`Error: ${e.response?.data?.error || e.message}`)
-    }
+      await takeMonthlySnapshot(snapMonth)
+      notify(`Snapshot saved for ${snapMonth} ✓`)
+    } catch (e) { notify(`Error: ${e.message}`) }
   }
 
   return (
@@ -148,7 +158,7 @@ export default function Admin() {
           <Input label="Name" value={newPlayer.name} onChange={e => setNP(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Epos" />
           <Input label="Country code" value={newPlayer.country} onChange={e => setNP(p => ({ ...p, country: e.target.value }))} placeholder="e.g. FR" />
         </div>
-        <Btn onClick={addPlayer}>Add Player</Btn>
+        <Btn onClick={handleAddPlayer}>Add Player</Btn>
       </Section>
 
       {/* Add Tournament */}
@@ -170,7 +180,7 @@ export default function Admin() {
           <Input label="Date" type="date" value={newTournament.date} onChange={e => setNT(p => ({ ...p, date: e.target.value }))} />
           <Input label="Prize pool (optional)" value={newTournament.prize_pool} onChange={e => setNT(p => ({ ...p, prize_pool: e.target.value }))} placeholder="e.g. $1,500" />
         </div>
-        <Btn onClick={addTournament}>Add Tournament</Btn>
+        <Btn onClick={handleAddTournament}>Add Tournament</Btn>
       </Section>
 
       {/* Add Result */}
@@ -184,44 +194,39 @@ export default function Admin() {
             <option value="">Select tournament…</option>
             {tournaments.map(t => <option key={t.id} value={t.id}>[{t.tier}] {t.name}</option>)}
           </Select>
-          <Input
-            label="Placement"
-            type="number" min="1"
-            value={newResult.placement}
-            onChange={e => setNR(p => ({ ...p, placement: e.target.value }))}
-            placeholder="e.g. 4"
-          />
-          <Input
-            label="Range end (for ties)"
-            type="number" min="1"
-            value={newResult.placement_range_end}
-            onChange={e => setNR(p => ({ ...p, placement_range_end: e.target.value }))}
-            placeholder="e.g. 8 (for 7th–8th)"
-          />
+          <Input label="Placement" type="number" min="1" value={newResult.placement} onChange={e => setNR(p => ({ ...p, placement: e.target.value }))} placeholder="e.g. 4" />
+          <Input label="Range end (for ties)" type="number" min="1" value={newResult.placement_range_end} onChange={e => setNR(p => ({ ...p, placement_range_end: e.target.value }))} placeholder="e.g. 8 (for 7th–8th)" />
         </div>
-        <Btn onClick={addResult}>Add Result</Btn>
+        <Btn onClick={handleAddResult}>Add Result</Btn>
       </Section>
 
       {/* Results log */}
-      <Section title="All Results" subtitle="Dimmed results don't count toward player score (not in top 8).">
+      <Section title="All Results" subtitle="Faded results are outside a player's top 8 and don't count toward their score.">
         <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-          {results.map(r => (
-            <div key={r.id} className="flex items-center justify-between bg-[#0a0e1a] rounded-lg px-3 py-2">
-              <div className="min-w-0">
-                <span className="text-white font-medium text-sm">{r.player_name}</span>
-                <span className="text-gray-600 text-xs mx-2">·</span>
-                <span className="text-gray-400 text-xs truncate">{r.tournament_name}</span>
-                <span className="text-gray-600 text-xs mx-2">·</span>
-                <span className="text-gray-500 text-xs font-mono">
-                  {r.placement_range_end ? `${r.placement}–${r.placement_range_end}` : `${r.placement}th`}
-                </span>
+          {results.map(r => {
+            const t  = r.tournaments
+            const ep = r.placement_range_end
+              ? Math.max(r.placement, r.placement_range_end)
+              : r.placement
+            const pts = t ? computePoints(t.tier, ep, t.impact, t.date) : null
+            return (
+              <div key={r.id} className="flex items-center justify-between bg-[#0a0e1a] rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <span className="text-white font-medium text-sm">{r.players?.name}</span>
+                  <span className="text-gray-600 text-xs mx-2">·</span>
+                  <span className="text-gray-400 text-xs truncate">{r.tournaments?.name}</span>
+                  <span className="text-gray-600 text-xs mx-2">·</span>
+                  <span className="text-gray-500 text-xs font-mono">
+                    {r.placement_range_end ? `${r.placement}–${r.placement_range_end}` : `${r.placement}th`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0 ml-2">
+                  {pts && <span className="font-mono text-[#00aaff] text-sm">{pts.toFixed(1)}</span>}
+                  <Btn variant="danger" onClick={() => handleDeleteResult(r.id)}>✕</Btn>
+                </div>
               </div>
-              <div className="flex items-center gap-3 flex-shrink-0 ml-2">
-                <span className="font-mono text-[#00aaff] text-sm">{r.points_earned?.toFixed(1)}</span>
-                <Btn variant="danger" onClick={() => deleteResult(r.id)}>✕</Btn>
-              </div>
-            </div>
-          ))}
+            )
+          })}
           {results.length === 0 && (
             <div className="text-gray-600 text-sm text-center py-6">No results yet</div>
           )}
@@ -231,13 +236,13 @@ export default function Admin() {
       {/* Monthly snapshot */}
       <Section
         title="Monthly Snapshot"
-        subtitle="Freezes the current top 3 as the HOF record for that month. Run at the end of each month. Cannot be overwritten."
+        subtitle="Freezes the current top 3 as the HOF record for that month. Run at end of month. Cannot be overwritten."
       >
         <div className="flex gap-3 items-end">
           <div className="w-44">
             <Input label="Month" type="month" value={snapMonth} onChange={e => setSM(e.target.value)} />
           </div>
-          <Btn onClick={triggerSnapshot} disabled={!snapMonth}>Take Snapshot</Btn>
+          <Btn onClick={handleSnapshot} disabled={!snapMonth}>Take Snapshot</Btn>
         </div>
       </Section>
 

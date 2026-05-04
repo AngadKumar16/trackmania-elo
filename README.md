@@ -1,51 +1,71 @@
 # TM Ratings
 
-A TrackMania player rating system based on tournament placements, tier weighting, impact multipliers, and time decay.
+TrackMania player rating system — GitHub Pages + Supabase.
+
+**Live:** `https://your-username.github.io/tm-ratings/`
 
 ## Rating Formula
 
 ```
 Points = Base × Placement% × Impact × Decay
-Final Score = Sum of best 8 results (rolling 12 months)
+Score  = Sum of best 8 results (12-month rolling window)
 ```
 
-### Tiers
 | Tier | Base | Examples |
 |------|------|---------|
 | S | 900 | EWC, ENC |
 | A | 400 | Elite Cup, Red Bull Faster qualifiers |
 | B | 250 | Overdrive, Beacon World League Div 1 |
 
-### Placement Multipliers
-1st: 100% · 2nd: 78% · 3rd: 62% · 4th: 50% · 5-6th: 38% · 7-8th: 28% · 9-12th: 20% · 13-16th: 13% · 17-24th: 8% · 25-32nd: 5% · 33-48th: 3% · 49+: 1%
+Decay: −10% per 2-month bracket. Results older than 12 months are dropped.
 
-### Impact Multipliers
-Low: ×0.85 · Standard: ×1.0 · High: ×1.2
+---
 
-### Time Decay
-10% per 2-month bracket. Results older than 12 months are dropped.
+## Setup (one-time)
 
-## Setup
+### 1. Supabase
+
+1. Go to [supabase.com](https://supabase.com) → New project
+2. Open **SQL Editor** → paste the contents of `supabase-schema.sql` → Run
+3. Go to **Settings → API** → copy:
+   - Project URL
+   - `anon` public key
+
+### 2. GitHub Secrets
+
+In your repo → **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Value |
+|--------|-------|
+| `VITE_SUPABASE_URL` | Your Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
+| `VITE_BASE_PATH` | `/tm-ratings/` (replace with your repo name, including slashes) |
+
+### 3. GitHub Pages
+
+In your repo → **Settings → Pages**:
+- Source: **GitHub Actions**
+
+### 4. Deploy
+
+Push to `main`. GitHub Actions will build and deploy automatically.
+
+---
+
+## Local development
 
 ```bash
-# Install all dependencies
-npm run install:all
+# Create .env.local
+echo "VITE_SUPABASE_URL=https://your-project.supabase.co" >> .env.local
+echo "VITE_SUPABASE_ANON_KEY=your-anon-key" >> .env.local
 
-# Run dev (server + client concurrently)
+npm install
 npm run dev
 ```
 
-Server: http://localhost:3001  
-Client: http://localhost:5173
+---
 
-## Environment Variables
+## Liquipedia API (future)
 
-Create a `.env` file in the root:
-```
-PORT=3001
-LIQUIPEDIA_KEY=your_key_here
-```
-
-## Liquipedia API
-
-Once your API access is approved, implement `server/liquipedia.js` and connect the import flow in Admin.
+Once approved, implement `src/lib/liquipedia.js` and add an import button to the Admin page.
+The Supabase schema already has `liquipedia_id` and `liquipedia_url` columns ready.

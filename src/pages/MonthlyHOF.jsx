@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import axios from 'axios'
+import { getMonthlyBests } from '../lib/api'
 
 const MEDALS = ['🥇', '🥈', '🥉']
 const RANK_STYLES = [
@@ -14,18 +14,17 @@ export default function MonthlyHOF() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    axios.get('/api/monthly').then(r => {
+    getMonthlyBests().then(data => {
       const g = {}
-      r.data.forEach(entry => {
+      data.forEach(entry => {
         if (!g[entry.month]) g[entry.month] = []
         g[entry.month].push(entry)
       })
       setGrouped(g)
-      setLoading(false)
-    })
+    }).finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="text-gray-400 text-center py-20">Loading...</div>
+  if (loading) return <div className="text-gray-400 text-center py-20">Loading…</div>
 
   const months = Object.keys(grouped).sort().reverse()
 
@@ -49,25 +48,24 @@ export default function MonthlyHOF() {
       <div className="space-y-6">
         {months.map(month => {
           const label = new Date(month + '-02').toLocaleDateString('en-US', {
-            month: 'long',
-            year: 'numeric'
+            month: 'long', year: 'numeric'
           })
           return (
             <div key={month} className="bg-[#111827] border border-[#1f2937] rounded-xl p-6">
               <h2 className="text-white font-bold text-lg mb-4">{label}</h2>
               <div className="grid grid-cols-3 gap-3">
                 {grouped[month].map(entry => {
-                  const style = RANK_STYLES[entry.rank - 1]
-                  const medal = MEDALS[entry.rank - 1]
+                  const style  = RANK_STYLES[entry.rank - 1]
+                  const medal  = MEDALS[entry.rank - 1]
                   return (
                     <div key={entry.rank} className={`border rounded-xl p-4 ${style}`}>
                       <div className="text-xl mb-1">{medal}</div>
-                      <div className="font-bold text-white">{entry.player_name}</div>
-                      {entry.country && (
-                        <div className="text-xs opacity-60 font-mono mt-0.5">{entry.country}</div>
+                      <div className="font-bold text-white">{entry.players?.name}</div>
+                      {entry.players?.country && (
+                        <div className="text-xs opacity-60 font-mono mt-0.5">{entry.players.country}</div>
                       )}
                       <div className="font-mono text-sm mt-2 opacity-80">
-                        {entry.score_snapshot.toFixed(1)} pts
+                        {parseFloat(entry.score_snapshot).toFixed(1)} pts
                       </div>
                     </div>
                   )

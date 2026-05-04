@@ -9,9 +9,6 @@ export default {
           card:   '#111827',
           border: '#1f2937'
         }
-      },
-      fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
       }
     }
   },

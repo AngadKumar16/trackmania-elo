@@ -1,50 +1,55 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import axios from 'axios'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
-} from 'recharts'
-import { TierBadge, ImpactBadge } from '../components/Badge'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { getPlayerWithResults, getLeaderboard } from '../lib/api'
 import { computePoints } from '../utils/scoring'
+import { TierBadge, ImpactBadge } from '../components/Badge'
 
 export default function PlayerProfile() {
   const { id } = useParams()
-  const [player, setPlayer] = useState(null)
+  const [player, setPlayer]   = useState(null)
   const [lbEntry, setLbEntry] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState(null)
 
   useEffect(() => {
-    Promise.all([
-      axios.get(`/api/players/${id}`),
-      axios.get('/api/leaderboard')
-    ]).then(([p, lb]) => {
-      setPlayer(p.data)
-      setLbEntry(lb.data.find(e => e.player.id === parseInt(id)) || null)
-      setLoading(false)
-    }).catch(() => setLoading(false))
+    Promise.all([getPlayerWithResults(id), getLeaderboard()])
+      .then(([p, lb]) => {
+        setPlayer(p)
+        setLbEntry(lb.find(e => e.player.id === parseInt(id)) || null)
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
   }, [id])
 
-  if (loading) return <div className="text-gray-400 text-center py-20">Loading...</div>
-  if (!player)  return <div className="text-red-400 text-center py-20">Player not found</div>
+  if (loading) return <div className="text-gray-400 text-center py-20">Loading…</div>
+  if (error)   return <div className="text-red-400 text-center py-20">Error: {error}</div>
+  if (!player) return <div className="text-red-400 text-center py-20">Player not found</div>
 
   const countingIds = new Set(lbEntry?.countingResults?.map(r => r.id) || [])
 
-  // Recompute live points for each result
-  const results = player.results.map(r => ({
-    ...r,
-    livePoints: computePoints(
-      r.tier,
-      r.placement_range_end ? Math.max(r.placement, r.placement_range_end) : r.placement,
-      r.impact,
-      r.date
-    )
-  }))
+  const results = (player.results || []).map(r => {
+    const t = r.tournaments
+    const effectivePlacement = r.placement_range_end
+      ? Math.max(r.placement, r.placement_range_end)
+      : r.placement
+    return {
+      ...r,
+      tournament_name: t.name,
+      tier:   t.tier,
+      impact: t.impact,
+      date:   t.date,
+      prize_pool: t.prize_pool,
+      livePoints: computePoints(t.tier, effectivePlacement, t.impact, t.date)
+    }
+  }).sort((a, b) => new Date(b.date) - new Date(a.date))
 
-  const chartData = results
-    .slice()
+  const chartData = [...results]
     .sort((a, b) => new Date(a.date) - new Date(b.date))
     .map(r => ({
-      name: r.tournament_name.length > 20 ? r.tournament_name.slice(0, 20) + '…' : r.tournament_name,
+      name: r.tournament_name.length > 18
+        ? r.tournament_name.slice(0, 18) + '…'
+        : r.tournament_name,
       pts: r.livePoints,
       counting: countingIds.has(r.id)
     }))
@@ -55,7 +60,6 @@ export default function PlayerProfile() {
         ← Back to Rankings
       </Link>
 
-      {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">{player.name}</h1>
@@ -72,11 +76,10 @@ export default function PlayerProfile() {
         )}
       </div>
 
-      {/* Chart */}
       {chartData.length > 0 && (
         <div className="bg-[#111827] border border-[#1f2937] rounded-xl p-5 mb-6">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">
-            Points per Tournament (green = counting toward score)
+            Points per Tournament — blue = counting toward score
           </h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={chartData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
@@ -97,12 +100,9 @@ export default function PlayerProfile() {
         </div>
       )}
 
-      {/* Results table */}
       <div className="bg-[#111827] border border-[#1f2937] rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-[#1f2937]">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Tournament History
-          </h2>
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Tournament History</h2>
         </div>
         <table className="w-full">
           <thead>
@@ -112,17 +112,14 @@ export default function PlayerProfile() {
               <th className="px-4 py-2 text-center">Impact</th>
               <th className="px-4 py-2 text-center">Place</th>
               <th className="px-4 py-2 text-right">Pts (live)</th>
-              <th className="px-4 py-2 text-right">In top 8</th>
+              <th className="px-4 py-2 text-right">Top 8</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1f2937]">
             {results.map(r => {
               const counting = countingIds.has(r.id)
               return (
-                <tr
-                  key={r.id}
-                  className={`transition-opacity ${counting ? 'opacity-100' : 'opacity-35 hover:opacity-60'}`}
-                >
+                <tr key={r.id} className={`transition-opacity ${counting ? 'opacity-100' : 'opacity-35 hover:opacity-60'}`}>
                   <td className="px-4 py-3">
                     <div className="text-white text-sm font-medium">{r.tournament_name}</div>
                     <div className="text-gray-600 text-xs font-mono">{r.date}</div>
@@ -130,9 +127,7 @@ export default function PlayerProfile() {
                   <td className="px-4 py-3 text-center"><TierBadge tier={r.tier} /></td>
                   <td className="px-4 py-3 text-center"><ImpactBadge impact={r.impact} /></td>
                   <td className="px-4 py-3 text-center text-gray-300 font-mono text-sm">
-                    {r.placement_range_end
-                      ? `${r.placement}–${r.placement_range_end}`
-                      : `${r.placement}`}
+                    {r.placement_range_end ? `${r.placement}–${r.placement_range_end}` : r.placement}
                   </td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-[#00aaff]">
                     {r.livePoints.toFixed(1)}
